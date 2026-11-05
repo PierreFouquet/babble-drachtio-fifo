@@ -211,6 +211,41 @@ describe( "interface pickrace.js", function() {
     }
   } )
 
+  /*
+    The silent call the other way round. The agent's 200 has marked the leg
+    established before the intercept picks, so the pick leaves the leg alone
+    (an answered leg is never cleared there) and prebridge then finds nobody
+    left in the queue to hand it. Nothing else hangs the leg up.
+  */
+  it( "releases an agent that answered just before an intercept took the only caller", async function() {
+
+    this.timeout( 3000 )
+    this.slow( 2000 )
+
+    const h = harness( 1 )
+    await new Promise( r => setTimeout( r, 60 ) )
+
+    const leg = h.inflight()[ 0 ]
+    expect( leg ).to.not.equal( undefined )
+
+    /* the 200 is in: callmanager marks the leg established before prebridge */
+    leg.agentcall.state.establishing = true
+    leg.agentcall.established = true
+
+    h.callers[ 0 ].emit( "call.pick", h.callers[ 0 ] )
+    await new Promise( r => setTimeout( r, 10 ) )
+
+    expect( leg.agentcall.hangup_cause, "the pick hung up an answered leg, so this no longer tests prebridge" )
+      .to.equal( undefined )
+
+    const cookie = await leg.callbacks.prebridge( leg.agentcall )
+    if( leg.callbacks.confirm ) await leg.callbacks.confirm( leg.agentcall, cookie )
+
+    expect( leg.agentcall.hangup_cause, "agent left answered with no caller - silent call" )
+      .to.equal( "LOSE_RACE" )
+    expect( h.callers[ 0 ].adopted ).to.have.length( 0 )
+  } )
+
   it( "clears the in-flight agent leg when the only caller is picked", async function() {
 
     this.timeout( 3000 )
